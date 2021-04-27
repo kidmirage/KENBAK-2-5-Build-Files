@@ -1374,15 +1374,14 @@ def popup_help():
      
     help = tk.Tk()
     help.title("KENBAK-2/5 Help")
-    help.geometry("1000x500")
+    help.geometry("1000x570")
     txt_help = tkscrolled.ScrolledText(help)
-    txt_help.configure(width=100, state="normal", wrap="none", padx="10", font=('Courier',14,'normal'), borderwidth=2)
+    txt_help.configure(width=80, state="normal", wrap="none", padx="10", font=('Courier',14,'normal'), borderwidth=2)
     with open("Assembler Syntax.txt", "r") as input_file:
         text = input_file.read()
         txt_help.insert(tk.END, text)
     txt_help.configure(state="disabled")
     txt_help.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-    help.mainloop()
 
 # Maintain a list of breakpoint positions in memory.
 breakPoints = []
