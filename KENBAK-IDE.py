@@ -1368,6 +1368,21 @@ class TextAssembly(tk.Canvas):
             if programCounter in breakPoints:
                 self.create_text(290,y+1,anchor="nw", font=('Courier',20,'bold'), fill="red", text="*")
             i = self.textwidget.index("%s+1line" % i)
+            
+# Pop up a text based help window.
+def popup_help():  
+     
+    help = tk.Tk()
+    help.title("KENBAK-2/5 Help")
+    help.geometry("1000x500")
+    txt_help = tkscrolled.ScrolledText(help)
+    txt_help.configure(width=100, state="normal", wrap="none", padx="10", font=('Courier',14,'normal'), borderwidth=2)
+    with open("Assembler Syntax.txt", "r") as input_file:
+        text = input_file.read()
+        txt_help.insert(tk.END, text)
+    txt_help.configure(state="disabled")
+    txt_help.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+    help.mainloop()
 
 # Maintain a list of breakpoint positions in memory.
 breakPoints = []
@@ -1407,6 +1422,7 @@ btn_run = tk.Button(fr_buttons, font=buttonFont, text="Run", command=run_program
 btn_auto = tk.Button(fr_buttons, font=buttonFont, text="Auto", command=auto_run_program)
 btn_step = tk.Button(fr_buttons, font=buttonFont, text="Step", command=step_program)
 btn_stop = tk.Button(fr_buttons,  font=buttonFont,text="Stop", command=stop_program)
+btn_help = tk.Button(fr_buttons,  font=buttonFont,text="Help", command=popup_help)
 
 btn_load.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
 btn_save.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
@@ -1416,6 +1432,7 @@ btn_run.grid(row=0, column=4, sticky="ew", padx=5)
 btn_auto.grid(row=0, column=5, sticky="ew", padx=5)
 btn_step.grid(row=0, column=6, sticky="ew", padx=5)
 btn_stop.grid(row=0, column=7, sticky="ew", padx=5)
+btn_help.grid(row=0, column=8, sticky="ew", padx=5)
 
 fr_buttons.grid(row=0, column=0, columnspan="3", sticky="ew")
 txt_assembled.grid(row=1, column=0, sticky="nsew")

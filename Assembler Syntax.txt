@@ -1,0 +1,111 @@
+Assembler Syntax
+================
+
+Instructions
+~~~~~~~~~~~~ 
+add     [A|B|X],[constant|address]              ;[I|M|(M)|M+X|(M)+X]
+sub     [A|B|X],[constant|address]              ;
+load    [A|B|X],[constant|address]              ;
+store   [A|B|X],[constant|address]              ;
+and     [A],[constant|address]                  ;
+or      [A],[constant|address]                  ;
+lneg    [A],[constant|address]                  ;
+
+jmp     [A|B|X],[NE|EQ|LT|GE|GT|GLE],address    ;[M|(M)]
+jmk     [A|B|X],[NE|EQ|LT|GE|GT|GLE],address    ;
+
+skp     [7|6|5|5|4|3|2|1|0],[0|1],address       ;[M]
+set     [7|6|5|5|4|3|2|1|0],[0|1],address       ;
+
+sft     [A|B],[L|R],[1|2|3|4]
+rot     [A|B],[L|R],[1|2|3|4]
+
+nop
+halt
+
+org     constant                                ;[I]
+
+Directives
+~~~~~~~~~~
+        org     constant                        ;[I] 
+label   [blank|instruction|constant]            ;[I] 
+        constant                                ;[I} 
+         
+The org directive can appear anywhere to set the starting instruction address
+for all instructions that follow. If a constant is not present address 4 is 
+assumed.
+
+If the OpCode position has an Integer Constant, then the value of that constant
+is placed at the current address, and the program counter is advanced by one. 
+
+Notes
+~~~~~
+
+* Any text appearing after a semi-colon (;) on a line will be considered a 
+  comment and be ignored.
+
+* All OpCodes, operands, and labels are NOT case sensitive.
+ 
+* A line of assembly code consists of:
+    - whitespace (spaces and tabs) OR an optional label followed by whitespace,
+    - an OpCode followed by whitespace,
+    - optional comma separated operands.
+  
+* Labels must start in column 1 and must begin with a letter. A label can stand
+  alone on a line or can be followed by an OpCode or an Integer Constant. 
+  Labels are used to determine a specific instruction address. An offset can be 
+  added to a label's value when it is used and is defined by appending a + sign 
+  followed by an Integer Constant, for example label+3.
+
+* For addresses:
+   I    - Immediate (Integer Constant)
+   M    - Memory
+  (M)   - Indirect
+  M+X   - Indexed
+ (M)+X  - Indirect Indexed
+ 
+  All of the special memory locations have a reserved address name:
+  
+      Name      Address         Usage
+      ~~~~      ~~~~~~~         ~~~~~
+      A         000             A register.
+      B         001             B register.
+      X         002             C register.
+      PC        003             Program counter.
+      OUTPUT    128             Maps to front panel data display lamps.
+      OCA       129             Overflow/Carry bits for A register.
+      OCB       130             Overflow/Carry bits for B register.
+      OCX       131             Overflow/Carry bits for X register.
+      INPUT     255             Maps to the front panel data input buttons.
+
+  Any address M beginning with a letter is assumed to be a label associated 
+  with the actual memory address who's value, obtained using the appropriate 
+  addressing mode, will be used in the operation. Any address beginning with 
+  a digit or a dash is assumed to be an Integer Constant representing the 
+  actual value to be used.
+ 
+* For jumps:
+   NE   - Not equal to zero
+   EQ   - Equal to zero
+   LT   - Less than zero
+   GE   - Greater than or equal to zero
+   GT   - Greater than zero
+   GLE  - Unconditional (greater or less or equal to zero)
+   
+   For an uncoditional jump you can just use the address alone. It's the same
+   as using A,GLE,address.
+
+* Integer Constants:
+  Decimal - Decimal integers begin with a non-zero digit followed by zero or
+            more decimal digits (09).
+  Octal   - Octal integers begin with zero (0) followed by zero or more octal
+            digits (07).
+  Binary  - Binary integers begin with 0b or 0B followed by one or more
+            binary digits (0, 1).
+  Hex     - Hexadecimal integers begin with 0x or 0X followed by one or
+            more hexadecimal digits (09, AF). Hexadecimal digits can be 
+            either uppercase or lowercase.
+  Char    - Character values begin with a ' followed by a single character.
+            
+  Decimal Integer Constants can have a leading dash (-) to indicate a negative
+  number.
