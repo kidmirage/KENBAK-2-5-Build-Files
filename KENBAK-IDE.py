@@ -154,6 +154,9 @@ if wiringPiLoaded:
 
 # Update the console data lamps based on the bits passed
 def show_data_lamps(bits):
+    global wiringPiLoaded
+    global wiringpi
+    
     if wiringPiLoaded:
         if bits & 0b00000001:
             wiringpi.digitalWrite(light_0,1)
@@ -190,6 +193,7 @@ def show_data_lamps(bits):
         
 # Debounce the button passed.
 def debounceButton(button):
+    global wiringPiLoaded
     if wiringPiLoaded:
         while not wiringpi.digitalRead(button):
             # Wait a bit.
@@ -211,12 +215,10 @@ def open_file():
         text = input_file.read()
         txt_code.insert(tk.END, text)
         
-    # Load the memory as binary. First change the extension.
-    binFilePath = filepath.replace(".asm",".bin")
-    with open(binFilePath, "rb") as binary_file:
-        memoryBytes = binary_file.read()
-        memory = bytearray(memoryBytes)
-        restart = bytearray(memoryBytes)
+    # Clear the memory and rebuild the byte codes before saving the restaer buffer.
+    memory = bytearray(256)
+    assemble_code(text, 4)
+    restart = bytearray(memory)
         
     # Initialize the instruction pointer to the default.
     memory[PC] = 4
@@ -590,9 +592,12 @@ def process_sub():
     ansSign = (memory[register] - operand) & SIGN
     if (op1Sign != op2Sign) and ansSign != op1Sign:
         memory[OCA+register] |= OVERFLOW
-    
+     
     # Perform the subtraction.
-    memory[register] -= operand
+    result = memory[register] - operand
+    if result < 0:
+        result = (result * -1)|0b10000000
+    memory[register] = result
     
     # Advance to next instruction.
     memory[PC] += 2
@@ -633,7 +638,7 @@ def process_jmk():
     opCode = memory[memory[PC]]
     
     # Get the target address.
-    address = memory[PC+1]    # Direct address.
+    address = memory[memory[PC]+1]    # Direct address.
     if opCode & 0b00001000:
         # Indirect address.
         address = memory[address]
@@ -688,7 +693,8 @@ def perform_next_instruction():
             # NOP. Just skip to the next instruction.
             memory[PC] += 1
         else:
-            # HALT. Stop the program.
+            # HALT. Advance the program counter then stop the program.
+            memory[PC] += 1
             return False
     elif opCode & 0b00000111 == 0b00000001:
         if opCode & 0b01000000:
@@ -739,7 +745,6 @@ def perform_next_instruction():
 
 # Run the program at full speed.
 def run_program():
-    global memory
     global run
     global autoRun
     global singleStep
@@ -750,15 +755,11 @@ def run_program():
     global memoryState
     global runState
     
+    # Reset.
+    stop_program()
+    
     # Set the running mode.
     run = True
-    autoRun = False
-    singleStep = False
-    stepping = False
-    
-    inputState = False
-    addressState = False
-    memoryState = False
     runState = True
     
 # Run the program at full speed.
@@ -803,25 +804,13 @@ def clear_program():
 # Run the program at about one instruction per second.       
 def auto_run_program():
     global autoRun
-    global nextStepTime
-    global run
-    global singleStep
-    global stepping
-    
-    global inputState
-    global addressState
-    global memoryState
     global runState
+    
+    # Reset.
+    stop_program()
     
     # Set the running mode.
     autoRun = True
-    run = False
-    singleStep = False
-    stepping = False
-    
-    inputState = False
-    addressState = False
-    memoryState = False
     runState = True
     
     # Set the time for the next instruction to run at.
@@ -832,25 +821,14 @@ def auto_run_program():
 def step_program():
     global singleStep
     global stepping
-    global autoRun
-    global run
     
-    global inputState
-    global addressState
-    global memoryState
-    global runState
+    # Reset.
+    stop_program()
     
     # Set the running mode.
     singleStep = True
     stepping = True
-    autoRun = False
-    run = False
     
-    inputState = False
-    addressState = False
-    memoryState = False
-    runState = True
-
 # Stop the currently running program.  
 def stop_program():
     global run
@@ -1244,6 +1222,9 @@ def process_line(line, programCounter, labels):
                     # Save the op code into memory.
                     memory[programCounter] = 0b00000000
                     return "[00|000|000]", programCounter+1
+                elif opCode == "db":
+                    # Reserve a byte of memory. Display the value in that memory location.
+                    return f"{memory[programCounter]:03}", programCounter+1
                 else:
                     # org with no integer constant
                     return "", programCounter
@@ -1445,7 +1426,7 @@ memory = bytearray(256)  # All bytes are initialized to null (zeros).
 restart = bytearray(256)  # All bytes are initialized to null (zeros).
 
 # Define the valid op codes.
-opCodes = {"add","sub","load","store","and","or","lneg","jmp","jmk","skp","set","sft","rot","nop","halt","org"}
+opCodes = {"add","sub","load","store","and","or","lneg","jmp","jmk","skp","set","sft","rot","nop","halt","org","db"}
 
 # Define the special memory locations.
 A = 0           # Registers.
@@ -1554,6 +1535,7 @@ while True:
             inputState = True
             addressState = False
             memoryState = False
+            debounceButton(button_clear)
         
         # Handle the display button.
         if not wiringpi.digitalRead(button_display) and not runState:
@@ -1561,10 +1543,12 @@ while True:
             addressState = True
             memoryState = False
             runState = False
+            debounceButton(button_display)
             
         # Handle the set button.
         if not wiringpi.digitalRead(button_set) and not runState and inputState:
             addressRegister = memory[INPUT]
+            debounceButton(button_set)
             
         # Handle the read button.
         if not wiringpi.digitalRead(button_read) and not runState:
@@ -1593,6 +1577,8 @@ while True:
             singleStep = False
             stepping = False
             
+            debounceButton(button_start)
+            
         # Handle the stop button.
         if not wiringpi.digitalRead(button_stop) and runState:
             inputState = False
@@ -1605,10 +1591,10 @@ while True:
             singleStep = False
             stepping = False
             
-            # As long as the stop button is pressed ee if the user wants to single step.
+            # As long as the stop button is pressed see if the user wants to single step.
             while not wiringpi.digitalRead(button_stop):
                 if not wiringpi.digitalRead(button_start):
-                    # User pressed start and stop ate the same time, so single step.
+                    # User pressed start and stop at the same time, so single step.
                     runState = True
                     singleStep = True
                     stepping = True
@@ -1646,7 +1632,6 @@ while True:
         sleep(.001)
     except:
         # Ignore to prevent error when application is destroyed.
-        pass
-    
+        pass    
     
 
