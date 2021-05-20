@@ -154,6 +154,9 @@ if wiringPiLoaded:
 
 # Update the console data lamps based on the bits passed
 def show_data_lamps(bits):
+    global wiringPiLoaded
+    global wiringpi
+    
     if wiringPiLoaded:
         if bits & 0b00000001:
             wiringpi.digitalWrite(light_0,1)
@@ -190,6 +193,7 @@ def show_data_lamps(bits):
         
 # Debounce the button passed.
 def debounceButton(button):
+    global wiringPiLoaded
     if wiringPiLoaded:
         while not wiringpi.digitalRead(button):
             # Wait a bit.
@@ -211,12 +215,10 @@ def open_file():
         text = input_file.read()
         txt_code.insert(tk.END, text)
         
-    # Load the memory as binary. First change the extension.
-    binFilePath = filepath.replace(".asm",".bin")
-    with open(binFilePath, "rb") as binary_file:
-        memoryBytes = binary_file.read()
-        memory = bytearray(memoryBytes)
-        restart = bytearray(memoryBytes)
+    # Clear the memory and rebuild the byte codes before saving the restaer buffer.
+    memory = bytearray(256)
+    assemble_code(text, 4)
+    restart = bytearray(memory)
         
     # Initialize the instruction pointer to the default.
     memory[PC] = 4
@@ -436,7 +438,8 @@ def process_sft():
         value = (value << shifts) & 0b11111111
     else:
         # Right
-        value = value >> shifts
+        for i in range(shifts):
+            value = (value >> 1) | (value & 0b10000000)
        
     # A or B register.
     if opCode & 0b00100000:
@@ -508,7 +511,7 @@ def process_lneg():
         # Special case for -128.
         memory[A] = operand
     else:
-        memory[A] = operand ^ 0b11111111
+        memory[A] = (operand ^ 0b11111111) + 1
     
     # Advance to next instruction.
     memory[PC] += 2
@@ -590,9 +593,9 @@ def process_sub():
     ansSign = (memory[register] - operand) & SIGN
     if (op1Sign != op2Sign) and ansSign != op1Sign:
         memory[OCA+register] |= OVERFLOW
-    
+     
     # Perform the subtraction.
-    memory[register] -= operand
+    memory[register] = ((memory[register] - operand) + 256) & 0b11111111;
     
     # Advance to next instruction.
     memory[PC] += 2
@@ -633,7 +636,7 @@ def process_jmk():
     opCode = memory[memory[PC]]
     
     # Get the target address.
-    address = memory[PC+1]    # Direct address.
+    address = memory[memory[PC]+1]    # Direct address.
     if opCode & 0b00001000:
         # Indirect address.
         address = memory[address]
@@ -688,7 +691,8 @@ def perform_next_instruction():
             # NOP. Just skip to the next instruction.
             memory[PC] += 1
         else:
-            # HALT. Stop the program.
+            # HALT. Advance the program counter then stop the program.
+            memory[PC] += 1
             return False
     elif opCode & 0b00000111 == 0b00000001:
         if opCode & 0b01000000:
@@ -739,7 +743,6 @@ def perform_next_instruction():
 
 # Run the program at full speed.
 def run_program():
-    global memory
     global run
     global autoRun
     global singleStep
@@ -750,15 +753,11 @@ def run_program():
     global memoryState
     global runState
     
+    # Reset.
+    stop_program()
+    
     # Set the running mode.
     run = True
-    autoRun = False
-    singleStep = False
-    stepping = False
-    
-    inputState = False
-    addressState = False
-    memoryState = False
     runState = True
     
 # Run the program at full speed.
@@ -803,25 +802,13 @@ def clear_program():
 # Run the program at about one instruction per second.       
 def auto_run_program():
     global autoRun
-    global nextStepTime
-    global run
-    global singleStep
-    global stepping
-    
-    global inputState
-    global addressState
-    global memoryState
     global runState
+    
+    # Reset.
+    stop_program()
     
     # Set the running mode.
     autoRun = True
-    run = False
-    singleStep = False
-    stepping = False
-    
-    inputState = False
-    addressState = False
-    memoryState = False
     runState = True
     
     # Set the time for the next instruction to run at.
@@ -832,25 +819,14 @@ def auto_run_program():
 def step_program():
     global singleStep
     global stepping
-    global autoRun
-    global run
     
-    global inputState
-    global addressState
-    global memoryState
-    global runState
+    # Reset.
+    stop_program()
     
     # Set the running mode.
     singleStep = True
     stepping = True
-    autoRun = False
-    run = False
     
-    inputState = False
-    addressState = False
-    memoryState = False
-    runState = True
-
 # Stop the currently running program.  
 def stop_program():
     global run
@@ -873,11 +849,13 @@ def stop_program():
     memoryState = False
     runState = False
 
-def process_constant(constant):
+def process_constant(constant, labels):
     # Figure out the base
     if len(constant) > 0:
         if len(constant) == 2 and constant[0] == "'":
             return ord(constant[1])
+        elif len(constant) > 1 and constant[0] == "#":
+            return labels.get(constant[1:], -1)
         elif constant[0] in {'-','1','2','3','4','5','6','7','8','9'}:
             base = 10  # Decimal
         elif constant.lower().startswith("0x"):
@@ -905,7 +883,7 @@ def process_constant(constant):
             return -1
     return -1
 
-def process_address(address):
+def process_address(address, labels):
     # Remove all white space from the address.
     pattern = re.compile(r'\s+')
     address = re.sub(pattern, '', address)
@@ -916,7 +894,7 @@ def process_address(address):
         address = address[0:indexed]
        
     # See if the address is an immediate constant.
-    immediate = process_constant(address)
+    immediate = process_constant(address, labels)
     if immediate >= 0:
         addressMode = 0b011
         return addressMode, ""
@@ -974,19 +952,19 @@ def process_full_address_opcodes(opCode, operands, programCounter, labels):
                 opValue = opValue | 0b10000000
         
         # Add the appropriate address bits to the op value.
-        addressMode, label = process_address(address)
+        addressMode, label = process_address(address, labels)
         offset = 0;
         if "+" in label:
             parts = label.split("+")
             label = parts[0]
-            offset = process_constant(parts[1])
+            offset = process_constant(parts[1], labels)
             if (offset < 0):
                 offset = 0;
         if addressMode >= 0:
             opValue = opValue | addressMode
             if addressMode == 3:
                 # Immediate.
-                addressValue = process_constant(address)
+                addressValue = process_constant(address, labels)
                 address = f"{addressValue:03}"
             elif label in labels:
                 # Lookup address.
@@ -1058,12 +1036,12 @@ def process_jump_opcodes(opCode, operands, programCounter, labels):
             
         
         # Add the appropriate address bits to the op value.
-        addressMode, label = process_address(address)
+        addressMode, label = process_address(address, labels)
         offset = 0;
         if "+" in label:
             parts = label.split("+")
             label = parts[0]
-            offset = process_constant(parts[1])
+            offset = process_constant(parts[1], labels)
             if (offset < 0):
                 offset = 0;
         if addressMode >= 0:
@@ -1122,12 +1100,12 @@ def process_skip_and_set_opcodes(opCode, operands, programCounter, labels):
         opValue = opValue | (int(compareBit)<<6)
           
         # Add the appropriate address bits to the op value.
-        addressMode, label = process_address(address)
+        addressMode, label = process_address(address, labels)
         offset = 0;
         if "+" in label:
             parts = label.split("+")
             label = parts[0]
-            offset = process_constant(parts[1])
+            offset = process_constant(parts[1], labels)
             if (offset < 0):
                 offset = 0;
         
@@ -1197,7 +1175,7 @@ def process_opcode(opCode, operands, programCounter, labels):
     opCode = opCode.lower()
     operands = operands.replace(" ", "")
     if opCode == "org":
-        constant = process_constant(operands)
+        constant = process_constant(operands, labels)
         if constant >= 0:
             return "", constant
     elif opCode in {"add","sub","load","store","and", "or","lneg"}:
@@ -1244,12 +1222,15 @@ def process_line(line, programCounter, labels):
                     # Save the op code into memory.
                     memory[programCounter] = 0b00000000
                     return "[00|000|000]", programCounter+1
+                elif opCode == "db":
+                    # Reserve a byte of memory. Display the value in that memory location.
+                    return f"{memory[programCounter]:03}", programCounter+1
                 else:
                     # org with no integer constant
                     return "", programCounter
         else:
             # Must be an integer constant.
-            decimalValue = process_constant(tokens[0])
+            decimalValue = process_constant(tokens[0], labels)
             if decimalValue >= 0:
                 memory[programCounter] = decimalValue
                 return f"{decimalValue:03}", programCounter+1
@@ -1374,15 +1355,14 @@ def popup_help():
      
     help = tk.Tk()
     help.title("KENBAK-2/5 Help")
-    help.geometry("1000x500")
+    help.geometry("1000x570")
     txt_help = tkscrolled.ScrolledText(help)
-    txt_help.configure(width=100, state="normal", wrap="none", padx="10", font=('Courier',14,'normal'), borderwidth=2)
+    txt_help.configure(width=80, state="normal", wrap="none", padx="10", font=('Courier',14,'normal'), borderwidth=2)
     with open("Assembler Syntax.txt", "r") as input_file:
         text = input_file.read()
         txt_help.insert(tk.END, text)
     txt_help.configure(state="disabled")
     txt_help.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-    help.mainloop()
 
 # Maintain a list of breakpoint positions in memory.
 breakPoints = []
@@ -1446,7 +1426,7 @@ memory = bytearray(256)  # All bytes are initialized to null (zeros).
 restart = bytearray(256)  # All bytes are initialized to null (zeros).
 
 # Define the valid op codes.
-opCodes = {"add","sub","load","store","and","or","lneg","jmp","jmk","skp","set","sft","rot","nop","halt","org"}
+opCodes = {"add","sub","load","store","and","or","lneg","jmp","jmk","skp","set","sft","rot","nop","halt","org","db"}
 
 # Define the special memory locations.
 A = 0           # Registers.
@@ -1555,6 +1535,7 @@ while True:
             inputState = True
             addressState = False
             memoryState = False
+            debounceButton(button_clear)
         
         # Handle the display button.
         if not wiringpi.digitalRead(button_display) and not runState:
@@ -1562,10 +1543,12 @@ while True:
             addressState = True
             memoryState = False
             runState = False
+            debounceButton(button_display)
             
         # Handle the set button.
         if not wiringpi.digitalRead(button_set) and not runState and inputState:
             addressRegister = memory[INPUT]
+            debounceButton(button_set)
             
         # Handle the read button.
         if not wiringpi.digitalRead(button_read) and not runState:
@@ -1594,6 +1577,8 @@ while True:
             singleStep = False
             stepping = False
             
+            debounceButton(button_start)
+            
         # Handle the stop button.
         if not wiringpi.digitalRead(button_stop) and runState:
             inputState = False
@@ -1606,10 +1591,10 @@ while True:
             singleStep = False
             stepping = False
             
-            # As long as the stop button is pressed ee if the user wants to single step.
+            # As long as the stop button is pressed see if the user wants to single step.
             while not wiringpi.digitalRead(button_stop):
                 if not wiringpi.digitalRead(button_start):
-                    # User pressed start and stop ate the same time, so single step.
+                    # User pressed start and stop at the same time, so single step.
                     runState = True
                     singleStep = True
                     stepping = True
@@ -1647,7 +1632,6 @@ while True:
         sleep(.001)
     except:
         # Ignore to prevent error when application is destroyed.
-        pass
-    
+        pass    
     
 
