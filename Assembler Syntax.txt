@@ -29,15 +29,11 @@ Directives
 ~~~~~~~~~~
         org     constant                        ;[I] 
 label   [blank|instruction|constant]            ;[I] 
-        constant                                ;[I]
-        db
+        constant                                ;[I} 
          
 The org directive can appear anywhere to set the starting instruction address
 for all instructions that follow. If a constant is not present address 4 is 
 assumed.
-
-The db directive will reserve a byte of memory at the address at which it is 
-defined.
 
 If the OpCode position has an Integer Constant, then the value of that constant
 is placed at the current address, and the program counter is advanced by one. 
