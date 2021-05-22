@@ -455,7 +455,7 @@ def process_skp():
     opCode = memory[memory[PC]]
     
     # Get the value that will be used to check for a skip.
-    checkByte = memory[memory[memory[PC+1]]]
+    checkByte = memory[memory[memory[PC]+1]]
     
     # Set a bit in the position that we are interested in.
     position = (opCode & 0b00111000) >> 3
@@ -481,7 +481,7 @@ def process_set():
     opCode = memory[memory[PC]]
     
     # Get the value that will be updated.
-    updateByte = memory[memory[PC+1]]
+    updateByte = memory[memory[memory[PC]+1]]
     
     # Set a bit in the position that we are interested in.
     position = (opCode & 0b00111000) >> 3
@@ -496,7 +496,7 @@ def process_set():
         updateByte &= (updateBit ^ 0b11111111)
         
     # Replace with the updated value.
-    memory[memory[PC+1]] = updateByte
+    memory[memory[memory[PC]+1]] = updateByte
     
     # Advance to next instruction.
     memory[PC] += 2
@@ -1171,6 +1171,11 @@ def process_shift_and_rotate_opcodes(opCode, operands, programCounter):
     return "????????????", programCounter
 
 def process_opcode(opCode, operands, programCounter, labels):
+    # Check for out of memory.
+    if programCounter > 254:
+        # Not enough room for an instruction.
+        return "", programCounter
+    
     # Treat all op codes as lower case.
     opCode = opCode.lower()
     operands = operands.replace(" ", "")
@@ -1178,6 +1183,11 @@ def process_opcode(opCode, operands, programCounter, labels):
         constant = process_constant(operands, labels)
         if constant >= 0:
             return "", constant
+    elif opCode == "db":
+        constant = process_constant(operands, labels)
+        if constant > 0:
+            # Reserve multiple bytes of memory. Display the value in that memory location.
+            return f"{memory[programCounter]:03}", programCounter+constant
     elif opCode in {"add","sub","load","store","and", "or","lneg"}:
         return process_full_address_opcodes(opCode, operands, programCounter, labels)
     elif opCode in {"jmp","jmk"}:
@@ -1189,6 +1199,7 @@ def process_opcode(opCode, operands, programCounter, labels):
     return "", programCounter
 
 def process_line(line, programCounter, labels):
+     
     # Remove any comments.
     line = line.upper().split(";",1)[0]
     
@@ -1213,6 +1224,11 @@ def process_line(line, programCounter, labels):
                     operands = operands + tokens[i]
                 return process_opcode(opCode, operands, programCounter, labels)
             else:
+                # Check for out of memory.
+                if programCounter > 255:
+                    # Not enough room for an instruction.
+                    return "", programCounter
+                
                 # Must be nop or halt.
                 if opCode == "nop":
                     # Save the op code into memory.
@@ -1254,9 +1270,12 @@ def process_lines(lineList, labels, programCounter):
         # Process line
         if line:
             assembled_line, programCounter = assemble_line(line, programCounter, labels)
-            if " ???" in assembled_line:
-                unresolvedLabels = True
-            assembly.append(assembled_line)
+            if programCounter > 256:
+                assembly.append("")
+            else:
+                if " ???" in assembled_line:
+                    unresolvedLabels = True
+                assembly.append(assembled_line)
         else:
             assembly.append("")
     return assembly, unresolvedLabels
@@ -1622,16 +1641,16 @@ while True:
         nextStepTime = int(time.time() * 1000) + 1000
     
     # Update the memory part of the screen,
-    try:
-        txt_assembled.redraw()
-        draw_state()
-        window.update_idletasks()
-        window.update()
-        
-        # Wait a bit.
-        sleep(.001)
-    except:
+    #try:
+    txt_assembled.redraw()
+    draw_state()
+    window.update_idletasks()
+    window.update()
+    
+    # Wait a bit.
+    sleep(.001)
+    #except:
         # Ignore to prevent error when application is destroyed.
-        pass    
+        #pass    
     
 
