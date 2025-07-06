@@ -45,7 +45,7 @@
 ; All the inputs should be in place. Start the conversion.
 ;
     load    A,year          ; Get the year.
-    sft 	   A,R,2           ; Divide by 4.
+    sft 	A,R,2           ; Divide by 4.
     store   A,B             ; Save to B the working result.
     add     B,day           ; Add the day of the month.
     load    X,month         ; Use X as index into the month keys.
@@ -130,7 +130,7 @@ working db                  ; Save space for return adderess.
 bcd2bin db                  ; Save space for return address.    
     store   A,X             ; Save A.
     sft     A,R,4           ; Get the 10's digit.
-    and     A,0b00001111	   ; Clear the high nibble.
+    and     A,0b00001111	; Clear the high nibble.
     jmk     chkdig          ; Make sure digit is 0 - 9.
     store   A,B             ; B will hold the 10's digit x 10 result
     add     B,B             ; B now X 2
